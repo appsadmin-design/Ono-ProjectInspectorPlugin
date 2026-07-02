@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin.json",
+  "name": "ono-project-inspector",
+  "version": "0.3.0",
+  "description": "Inspects an existing software repository and gradually builds a structured AI knowledge base for it (CLAUDE.md, AUDIT.md, and per-topic audit documents). Never modifies source code. First plugin in the Ono internal AI Marketplace.",
+  "author": {
+    "name": "Ono Apps",
+    "email": "yagil@onoapps.com"
+  },
+  "keywords": [
+    "audit",
+    "code-inspection",
+    "documentation",
+    "onboarding",
+    "read-only"
+  ],
+  "commands": [
+    "commands/inspect.md",
+    "commands/inspect-status.md",
+    "commands/inspect-topic.md",
+    "commands/inspect-approve.md"
+  ],
+  "agents": [
+    "agents/project-inspector.md"
+  ],
+  "skills": [
+    "skills/project-analysis",
+    "skills/project-docs",
+    "skills/audit-breakdown",
+    "skills/audit-sync"
+  ],
+  "hardConstraints": {
+    "modifiesSourceCode": false,
+    "createsFeatureDocs": false,
+    "createsImplementationPlans": false
+  },
+  "extensibility": {
+    "registry": "skills/registry.json",
+    "note": "New inspector skills are added by (1) placing the skill under skills/<id>/, (2) adding one entry to skills/registry.json, and (3) optionally adding a hooks/after-<id>.md checkpoint file. No changes to plugin.json, agents/project-inspector.md, commands/inspect.md, or existing hooks are required."
+  }
+}
