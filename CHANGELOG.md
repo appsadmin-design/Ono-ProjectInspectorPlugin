@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0 — 2026-07-03
+
+Added `inspection-state`, an internal infrastructure skill that tracks resumable inspection state per repository.
+
+- New internal skill `skills/inspection-state` (registry `type: internal`, `autoInvoke: true`) — not user-facing, no command. The agent invokes it automatically at startup and after each stage/loop step. It owns a single file, `<repo>/.ono/state.json`.
+- New deterministic helper `scripts/inspection-state.ts` (`detect` / `init` / `sync` / `set-stage` / `migrate`). `AUDIT.md` stays the source of truth; state.json mirrors it into portable orchestration state.
+- State file tracks: plugin version + `stateSchemaVersion`, completed stages, a reconciled snapshot of the AUDIT.md topics (status/counts/timestamps), and a `resume` pointer. Detects prior inspection, detects plugin/schema version mismatch, and supports schema migrations.
+- Portable by design: stores only repo-relative paths and the git remote — never absolute filesystem paths — so it is committed to Git and travels across machines/clones. `.ono/` is the shared Ono infrastructure directory; this plugin owns only `state.json`.
+- Introduced a `type` field on registry entries (`workflow` vs `internal`) to cleanly separate user-facing workflow skills from auto-invoked infrastructure. Existing entries tagged `type: workflow`.
+- Wired the agent (`before-inspect` startup detect/init/migrate/version/resume; `sync` after each step; `status` mode reads state via `detect`) to use the resume pointer instead of re-deriving progress from files.
+- Updated `.claude-plugin/plugin.json` (registered the skill, bumped to 0.5.0), `README.md`, `docs/plugin-workflow.md`, `docs/architecture.md`.
+- No changes to any target repository's source code.
+
 ## 0.4.0 — 2026-07-03
 
 Redesigned the audit approval workflow around a dedicated `audit-approve` skill, so each skill has a single responsibility. Previously, "approve & continue" only advanced to the next Draft and never finalized the reviewed topic — Drafts accumulated with none marked `Approved`. Approval is now its own step.

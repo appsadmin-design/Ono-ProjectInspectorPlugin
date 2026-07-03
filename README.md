@@ -38,17 +38,19 @@ commands/inspect-status.md   /inspect-status — read-only progress report
 commands/inspect-topic.md    /inspect-topic — targeted topic breakdown
 commands/inspect-approve.md  /inspect-approve — finalize the reviewed Draft, then continue
 commands/inspect-sync.md     /inspect-sync — on-demand documentation-sync maintenance
-skills/                      vendored inspection skills + registry.json (extensibility seam)
+skills/                      vendored skills + registry.json (extensibility seam); includes internal inspection-state
 hooks/                       agent-read checkpoint instructions between stages
-scripts/                     deterministic verification helpers (slug rules, AUDIT.md consistency)
+scripts/                     deterministic helpers (slug rules, AUDIT.md consistency, .ono/state.json state)
 templates/                   reserved for future skills; unused by current skills by design
 docs/                        architecture and workflow documentation
 ```
 
+The plugin also maintains a committed, portable state file at `<target-repo>/.ono/state.json` (owned by the internal `inspection-state` skill) so an interrupted inspection resumes exactly where it left off. `AUDIT.md` remains the source of truth; the state file only mirrors it.
+
 ## Adding a new inspection skill
 
 1. Place it under `skills/<id>/` and list it in `plugin.json`'s `skills[]`.
-2. Add one entry to `skills/registry.json` (with `role`/`pairsWith`/`workflowRole` as appropriate).
+2. Add one entry to `skills/registry.json` (with `type` = `workflow` or `internal`, and `role`/`pairsWith`/`workflowRole` as appropriate).
 3. Optionally add `hooks/after-<id>.md` and a command.
 
 A skill that fits an existing shape (a linear stage, a breakdown-approve loop partner, or an on-demand maintenance tool) needs no change to the agent or existing hooks; only a genuinely new orchestration pattern does. See `docs/architecture.md` for details.
@@ -57,6 +59,7 @@ A skill that fits an existing shape (a linear stage, a breakdown-approve loop pa
 
 All skills are implemented and enabled:
 
+- `inspection-state` — enabled (internal infrastructure, auto-invoked; not user-facing)
 - `project-analysis` — enabled (stage 1, inspection)
 - `project-docs` — enabled (stage 2, inspection)
 - `audit-breakdown` — enabled (stage 3, inspection — breakdown half of the loop)

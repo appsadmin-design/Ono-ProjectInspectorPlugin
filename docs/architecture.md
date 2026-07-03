@@ -9,11 +9,19 @@ The plugin must let new inspection skills (e.g. `ui-ux-inspector`, `architecture
 ```
 commands/inspect.md          thin entry point, starts the agent
 agents/project-inspector.md  orchestrator: reads the registry, sequences skills, enforces approval gates
-skills/registry.json         the extensibility seam: what skills exist, order, dependencies, hooks
-skills/<id>/SKILL.md         the actual analysis skills (vendored, unmodified logic)
+skills/registry.json         the extensibility seam: what skills exist, their type, order, dependencies, hooks
+skills/<id>/SKILL.md         the actual skills (vendored, unmodified logic)
 hooks/*.md                   checkpoint instructions the agent reads before/after each stage
-scripts/*.ts                 deterministic (non-LLM) helpers hooks can invoke to verify skill output
+scripts/*.ts                 deterministic (non-LLM) helpers: slug rules, AUDIT.md verification, and the .ono/state.json state helper
+<repo>/.ono/state.json       (in the target repo) the plugin's portable, committed orchestration state
 ```
+
+## Skill types
+
+Each `registry.json` entry declares a `type`:
+
+- `workflow` — a normal registry-driven skill the agent sequences. Its `workflowRole` is `inspection` (part of the linear loop) or `maintenance` (on-demand only).
+- `internal` — auto-invoked infrastructure (`autoInvoke: true`), currently `inspection-state`. It has no command, is never a stage or an approval gate, and the agent calls it automatically at checkpoints. This keeps user-facing workflow skills and internal plumbing cleanly separated in one registry.
 
 ## Why a registry instead of hardcoded orchestration
 
@@ -45,12 +53,18 @@ Stage 3 makes the approval model explicit by giving finalization its own skill. 
 
 Skills produce markdown by LLM judgment, which is good for prose but not ideal for exact-match bookkeeping like slugs and table cell values. `scripts/slugify.ts` and `scripts/update-audit-index.ts` give the `after-audit-breakdown` and `after-audit-approve` hooks a way to double-check the skill's own edit against a fixed rule — verifying the row's status and that the permanent `File` reference matches the deterministic slug on both `Draft` and `Approved` rows — without the agent or a script ever being allowed to rewrite the file itself. Discrepancies are reported to the developer, not silently patched.
 
+## Inspection state (resume, versioning, migrations)
+
+`.ono/state.json` in the target repo is the plugin's durable orchestration memory, owned exclusively by the internal `inspection-state` skill through the deterministic `scripts/inspection-state.ts` helper. It records the plugin and schema versions, per-stage completion, a reconciled snapshot of the `AUDIT.md` topic table (status, counts, timestamps), and a `resume` pointer. This lets the agent resume exactly where an interrupted run left off instead of re-guessing from files, detect a `versionMismatch` when a newer plugin opens an older repo, and migrate the file forward via a versioned `stateSchemaVersion`.
+
+Two design rules keep it safe: **`AUDIT.md` stays the source of truth** — the state file mirrors it and never overrides it — and **the file is portable** — it stores only repo-relative paths and the git remote, never absolute machine paths, so it is committed to Git and travels across clones. `.ono/` is intended as a shared infrastructure directory for future Ono plugins; this plugin owns only `state.json` within it.
+
 ## Extending the plugin
 
 To add a new skill, e.g. `security-inspector`:
 
 1. Place the skill under `skills/security-inspector/` and list it in `plugin.json`'s `skills[]` array.
-2. Add one entry to `skills/registry.json` with its `stage`, `role`/`pairsWith`/`workflowRole`, `requires`, `produces`, and `requiresApproval`.
+2. Add one entry to `skills/registry.json` with its `type` (`workflow` or `internal`), `stage`, `role`/`pairsWith`/`workflowRole` (for workflow skills), `requires`, `produces`, and `requiresApproval`.
 3. Optionally add `hooks/after-security-inspector.md` if the stage needs a checkpoint, and a command under `commands/` (also listed in `plugin.json`) if it needs a dedicated entry point.
 
 If the new skill fits an existing orchestration shape — a linear inspection stage, a breakdown-approve-style loop partner, or an on-demand maintenance tool — no change to `agents/project-inspector.md` or existing hooks is needed; the agent's generic logic already handles it via the registry fields. Only a genuinely new orchestration pattern (as the breakdown-approve loop itself was) requires updating the agent.

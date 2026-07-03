@@ -1,10 +1,25 @@
 {
   "$schemaVersion": 1,
-  "description": "Extensibility seam for the Ono Project Inspector plugin. The orchestrating agent (agents/project-inspector.md) reads this file to decide which skills exist, in what order, how they connect to hooks, and how they relate to each other (via `role` and `pairsWith`). A skill's `workflowRole` distinguishes skills that are part of the linear inspection sequence (`inspection`, the default) from on-demand maintenance tools (`maintenance`) that the agent must not run as part of the normal workflow. Adding a new skill never requires editing the agent or existing hooks — only this file plus the new skill folder (and optionally a new hook and command).",
+  "description": "Extensibility seam for the Ono Project Inspector plugin. The orchestrating agent (agents/project-inspector.md) reads this file to decide which skills exist, in what order, how they connect to hooks, and how they relate to each other. Each skill declares a `type`: `workflow` (a normal registry-driven skill the agent sequences) or `internal` (auto-invoked infrastructure the agent calls automatically at checkpoints — not a workflow stage, no command, no approval gate; marked `autoInvoke: true`). For `workflow` skills, `workflowRole` further distinguishes the linear inspection sequence (`inspection`, the default) from on-demand maintenance tools (`maintenance`). `role`/`pairsWith` express intra-stage relationships such as the breakdown-approve loop. Adding a new skill never requires editing the agent when it fits an existing shape — only this file plus the new skill folder (and optionally a new hook and command).",
   "skills": [
+    {
+      "id": "inspection-state",
+      "enabled": true,
+      "type": "internal",
+      "autoInvoke": true,
+      "stage": 0,
+      "path": "skills/inspection-state",
+      "produces": [".ono/state.json"],
+      "requires": [],
+      "repeatable": true,
+      "requiresApproval": false,
+      "hooks": {},
+      "notes": "Internal infrastructure skill (not user-facing, no command). Owns <repo>/.ono/state.json via the deterministic scripts/inspection-state.ts helper. The agent invokes it automatically: at startup (detect prior inspection, version mismatch, migration, resume pointer) and after each stage/loop step (sync stages, topic snapshot, counts, resume). AUDIT.md stays the source of truth for topic status; this skill only mirrors it into portable orchestration state (no absolute paths). Excluded from the linear inspection loop and from maintenance because type is internal."
+    },
     {
       "id": "project-analysis",
       "enabled": true,
+      "type": "workflow",
       "stage": 1,
       "role": "analysis",
       "workflowRole": "inspection",
@@ -22,6 +37,7 @@
     {
       "id": "project-docs",
       "enabled": true,
+      "type": "workflow",
       "stage": 2,
       "role": "docs",
       "workflowRole": "inspection",
@@ -43,6 +59,7 @@
     {
       "id": "audit-breakdown",
       "enabled": true,
+      "type": "workflow",
       "stage": 3,
       "role": "breakdown",
       "pairsWith": "audit-approve",
@@ -60,6 +77,7 @@
     {
       "id": "audit-approve",
       "enabled": true,
+      "type": "workflow",
       "stage": 3,
       "role": "approval",
       "pairsWith": "audit-breakdown",
@@ -77,6 +95,7 @@
     {
       "id": "audit-sync",
       "enabled": true,
+      "type": "workflow",
       "stage": 4,
       "role": "maintenance",
       "workflowRole": "maintenance",

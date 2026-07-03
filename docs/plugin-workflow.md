@@ -22,7 +22,7 @@ or just `/inspect`, and the agent will ask for the repository path.
 
 ## Step-by-step
 
-1. **Startup** — the agent reads `skills/registry.json` and `hooks/before-inspect.md`, then reports the planned stage order (and any disabled or maintenance-only skills).
+1. **Startup** — the agent reads `skills/registry.json` and `hooks/before-inspect.md`. Via the internal `inspection-state` skill it detects whether the repo was already inspected (reading `<repo>/.ono/state.json`), handles any plugin/schema version mismatch or migration, and computes a resume pointer, then reports the planned stage order (and any disabled or maintenance-only skills).
 2. **Stage 1 — project-analysis** — the agent checks no prerequisites are needed, invokes `project-analysis`, which asks its own intake questions, confirms, then writes `CLAUDE.md` and `AUDIT.md` only. The agent runs `hooks/after-project-analysis.md`, reports the topic count, and stops for approval.
 3. **Developer reviews** `CLAUDE.md` and `AUDIT.md`, then approves continuing.
 4. **Stage 2 — project-docs** — the agent confirms `CLAUDE.md` exists, invokes `project-docs`, which reads the existing context, inspects source read-only, and writes the four `docs/project/*.md` files (overview, components, patterns, integrations). It never touches `CLAUDE.md`, `AUDIT.md`, or `audits/`. The agent runs `hooks/after-project-docs.md` and stops for approval.
@@ -33,6 +33,10 @@ or just `/inspect`, and the agent will ask for the repository path.
    3. **Approve (audit-approve)** — on approval (`/inspect-approve` or "approved, continue"), the agent invokes `audit-approve`, which validates the topic is `Draft`, flips its `AUDIT.md` row to `Approved`, and confirms the permanent file reference. The agent runs `hooks/after-audit-approve.md`. `audit-approve` has no approval gate of its own — running it *is* the approval.
    4. **Continue** — immediately after a clean approval, the agent breaks down the next `Pending Breakdown` topic (back to 6.1) and stops at its review gate. No second Draft is ever generated without a review in between.
    5. **Stage 3 complete** — when no `Pending Breakdown` topics remain and no `Draft` is open (every topic is `Approved`), the agent reports Stage 3 complete and offers `audit-sync` as optional maintenance.
+
+## Inspection state and resume
+
+Throughout the workflow the agent keeps `<repo>/.ono/state.json` up to date via the internal `inspection-state` skill (after every stage and every Stage 3 loop step). This file is the plugin's committed, portable orchestration memory: plugin/schema versions, completed stages, a reconciled snapshot of the `AUDIT.md` topics, and a `resume` pointer. Because of it, restarting `/inspect` (or running `/inspect-approve`) after an interruption continues exactly where you left off — the reviewed Draft still awaiting approval, or the next topic to break down — instead of re-deriving progress from files. `AUDIT.md` stays the source of truth; `state.json` only mirrors it. The developer never invokes `inspection-state` directly; it is internal infrastructure. Commit `.ono/state.json` so progress is shared with the team.
 
 ## Maintenance (outside the workflow)
 
