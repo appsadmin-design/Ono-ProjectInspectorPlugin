@@ -2,12 +2,13 @@
 
 ## Commands
 
-The plugin exposes four commands, all thin wrappers around `agents/project-inspector.md`, which dispatches on the mode each command declares (see the agent's "Invocation Modes" section):
+The plugin exposes five commands, all thin wrappers around `agents/project-inspector.md`, which dispatches on the mode each command declares (see the agent's "Invocation Modes" section):
 
-- `/inspect [repo-path]` — `full` mode. Runs the guided end-to-end workflow described below.
+- `/inspect [repo-path]` — `full` mode. Runs the guided end-to-end inspection workflow described below.
 - `/inspect-status [repo-path]` — `status` mode. Read-only snapshot of progress; invokes no skill.
 - `/inspect-topic [topic-name] [repo-path]` — `targeted` mode. Runs one `audit-breakdown` cycle directly for the named (or next pending) topic.
-- `/inspect-approve [repo-path]` — `resume` mode. Advances exactly one step past the current approval gate.
+- `/inspect-approve [repo-path]` — `resume` mode. Approves the current gate: finalizes the reviewed audit Draft (runs `audit-approve`) and continues the breakdown-approve loop, or advances one non-repeatable stage.
+- `/inspect-sync [repo-path]` — `maintenance` mode. Runs the `audit-sync` documentation-maintenance tool on demand (not part of the linear workflow).
 
 A developer never needs to know a skill's name to use the plugin — every command already knows which skill(s) it needs and lets the agent handle sequencing.
 
@@ -21,24 +22,31 @@ or just `/inspect`, and the agent will ask for the repository path.
 
 ## Step-by-step
 
-1. **Startup** — the agent reads `skills/registry.json` and `hooks/before-inspect.md`, then reports the planned stage order (and any disabled skills, if the registry ever has one).
+1. **Startup** — the agent reads `skills/registry.json` and `hooks/before-inspect.md`, then reports the planned stage order (and any disabled or maintenance-only skills).
 2. **Stage 1 — project-analysis** — the agent checks no prerequisites are needed, invokes `project-analysis`, which asks its own intake questions, confirms, then writes `CLAUDE.md` and `AUDIT.md` only. The agent runs `hooks/after-project-analysis.md`, reports the topic count, and stops for approval.
 3. **Developer reviews** `CLAUDE.md` and `AUDIT.md`, then approves continuing.
 4. **Stage 2 — project-docs** — the agent confirms `CLAUDE.md` exists, invokes `project-docs`, which reads the existing context, inspects source read-only, and writes the four `docs/project/*.md` files (overview, components, patterns, integrations). It never touches `CLAUDE.md`, `AUDIT.md`, or `audits/`. The agent runs `hooks/after-project-docs.md` and stops for approval.
 5. **Developer reviews** the `docs/project/` files, then approves continuing.
-6. **Stage 3 — audit-breakdown (cycle 1)** — the agent confirms `AUDIT.md` exists, invokes `audit-breakdown`, which asks the developer which `Pending Breakdown` topic to process (default: first), confirms, then writes exactly one `audits/<slug>/<slug>-audit.md` and updates one row in `AUDIT.md`. The agent runs `hooks/after-audit-breakdown.md` (deterministic slug/status check), reports how many topics remain, and stops for approval.
-7. **Developer reviews** the Draft audit file and either asks to break down another topic, or names the topic(s) they approve.
-8. **Stage 3 — audit-breakdown (cycle 2, 3, ...)** — repeats step 6 for each subsequent approval, one topic per cycle, until no `Pending Breakdown` topics remain or the developer stops.
-9. **Stage 4 — audit-sync** — when the developer explicitly names one or more Draft topics as approved, the agent invokes `audit-sync`, which flips those rows to `Approved` in `AUDIT.md` and regenerates the two managed blocks in `CLAUDE.md` from all currently-Approved topics. The agent runs `hooks/after-audit-sync.md`. This stage is repeatable — run it again whenever more topics are approved.
+6. **Stage 3 — the breakdown-approve loop.** This stage iterates over `Pending Breakdown` topics, one at a time, using two paired skills:
+   1. **Break down (audit-breakdown)** — the agent invokes `audit-breakdown`, which asks which `Pending Breakdown` topic to process (default: first), confirms, then writes exactly one `audits/<slug>/<slug>-audit.md` and sets that row to `Draft`. The agent runs `hooks/after-audit-breakdown.md` (deterministic slug/status check) and **stops at the Draft's review gate**.
+   2. **Developer reviews** the Draft audit file.
+   3. **Approve (audit-approve)** — on approval (`/inspect-approve` or "approved, continue"), the agent invokes `audit-approve`, which validates the topic is `Draft`, flips its `AUDIT.md` row to `Approved`, and confirms the permanent file reference. The agent runs `hooks/after-audit-approve.md`. `audit-approve` has no approval gate of its own — running it *is* the approval.
+   4. **Continue** — immediately after a clean approval, the agent breaks down the next `Pending Breakdown` topic (back to 6.1) and stops at its review gate. No second Draft is ever generated without a review in between.
+   5. **Stage 3 complete** — when no `Pending Breakdown` topics remain and no `Draft` is open (every topic is `Approved`), the agent reports Stage 3 complete and offers `audit-sync` as optional maintenance.
+
+## Maintenance (outside the workflow)
+
+`audit-sync` is a documentation-maintenance tool, not a workflow stage (`workflowRole: maintenance` in the registry). Run it on demand with `/inspect-sync` once one or more topics are `Approved`. It reads the currently-`Approved` topics and regenerates the two managed blocks in `CLAUDE.md` (Caution Areas and Important Files), verifies `AUDIT.md` consistency, detects drift, repairs references inside its managed blocks, and reports. It **never** marks anything `Approved` and treats `AUDIT.md` as read-only. Re-run it whenever more topics are approved.
 
 ## Shortcuts onto the same steps
 
-`/inspect-status` can be run at any point in the above and never changes state. `/inspect-approve` performs exactly step 3 or step 5 above (whichever gate is currently open) without needing the developer to type free text. `/inspect-topic <name>` performs one cycle of step 4/6 directly, for a specific topic, without first running `/inspect`. All three read the same `skills/registry.json` and `AUDIT.md` the guided flow uses, so state never diverges between commands.
+`/inspect-status` can be run at any point and never changes state. `/inspect-approve` performs whichever gate is currently open — the non-repeatable stage gates (step 3 or 5) or the Stage 3 review gate (finalize the Draft via `audit-approve`, then break down the next topic). `/inspect-topic <name>` performs one `audit-breakdown` cycle directly for a specific topic without first running `/inspect`. `/inspect-sync` runs maintenance. All read the same `skills/registry.json` and `AUDIT.md` the guided flow uses, so state never diverges between commands.
 
 ## What never happens
 
 - The agent never reads or writes repository source files directly.
-- No stage runs without the developer having approved the previous one (`requiresApproval` is true for every stage).
-- `audit-sync` never marks a topic `Approved` unless the developer explicitly named it as approved.
-- `audit-breakdown` never processes more than one topic per approval.
+- No inspection stage runs without the developer having approved the previous one.
+- No second `audit-breakdown` Draft is generated without a developer review of the previous Draft in between.
+- Only `audit-approve` ever changes a topic to `Approved`, and only on explicit developer approval. `audit-breakdown` and `audit-sync` never mark anything `Approved`.
+- `audit-sync` never writes `AUDIT.md` and never runs as part of the normal workflow.
 - No skill creates implementation plans, Jira tasks, or source-code patches — that is out of scope for the entire plugin by design.

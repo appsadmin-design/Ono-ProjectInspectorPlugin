@@ -360,28 +360,18 @@ Status:
 
 Next:
   Review the Draft audit file.
-  If approved, mark the topic as Approved or ask me to continue to the next Pending Breakdown topic.
+  When you approve it (say "approved, continue" or run /inspect-approve), the
+  audit-approve skill finalizes this topic (Draft → Approved) and the next
+  Pending Breakdown topic is broken down automatically.
 
 I stopped after one topic as required.
 ```
 
 ## Approval Rule
 
-This skill must not continue to another topic automatically.
+This skill produces one Draft and stops. It must never continue to another topic on its own, and it must never mark a topic `Approved` — finalization is the separate `audit-approve` skill's exclusive job.
 
-To continue, the developer must explicitly say something like:
-
-```text
-Approved, continue to the next topic.
-```
-
-or:
-
-```text
-Create the next audit breakdown.
-```
-
-Even then, process only one additional topic and stop again.
+Continuation is orchestrated by the Project Inspector agent, not by this skill: once the developer approves the Draft (e.g. "approved, continue" or `/inspect-approve`), the agent runs `audit-approve` to finalize this topic and then invokes this skill again for the next `Pending Breakdown` topic. Each invocation still processes exactly one topic and stops at its own review gate.
 
 ## Hard Constraints
 

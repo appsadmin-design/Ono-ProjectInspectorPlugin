@@ -1,12 +1,15 @@
 ---
-description: Approve continuing past the current Ono Project Inspector approval gate (advance one stage, or process one more topic).
+description: Approve the current Ono Project Inspector gate — finalize the reviewed audit Draft (or advance one stage), then continue.
 argument-hint: "[repository-path]"
 ---
 
 Invoke the `project-inspector` agent in **`resume` mode** (see the agent's "Invocation Modes" section in `agents/project-inspector.md`).
 
-This is the explicit, discoverable equivalent of replying "approved, continue" in conversation. It advances the workflow by exactly one step: the next unblocked stage, or one more cycle if the last completed stage was repeatable (e.g. one more `audit-breakdown` topic). If an argument was provided, treat it as the repository path in case conversation context was lost; otherwise rely on context from the current session.
+This is the explicit, discoverable equivalent of replying "approved, continue" in conversation. Its effect depends on what is awaiting approval:
 
-This command never advances more than one step, even if multiple stages could technically run.
+- **A Stage 3 audit Draft** — the agent runs the `audit-approve` skill to finalize that topic (`Draft` -> `Approved` in `AUDIT.md`), then immediately breaks down the **next** `Pending Breakdown` topic and stops at that new Draft's review gate. If no topics remain, it reports Stage 3 complete instead.
+- **A non-repeatable stage** (`project-analysis`, `project-docs`) — the agent advances exactly one step to the next stage.
+
+If an argument was provided, treat it as the repository path in case conversation context was lost; otherwise rely on context from the current session. This command advances one finalize-and-continue cycle; it never generates two Drafts without a review gate in between, and it never marks a topic Approved without your approval (running this command is that approval).
 
 $ARGUMENTS

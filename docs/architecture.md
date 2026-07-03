@@ -20,17 +20,22 @@ scripts/*.ts                 deterministic (non-LLM) helpers hooks can invoke to
 If `agents/project-inspector.md` contained explicit steps like "run project-analysis, then run audit-breakdown," adding `security-inspector` later would require editing that file — and every other skill's ordering assumptions would need re-checking too. Instead, the agent's logic is generic:
 
 ```
-read registry -> sort by stage -> for each enabled entry:
-  check requires[] exist -> run before-hook (if any) ->
-  invoke skill by id -> run after-hook (if any) ->
-  stop if requiresApproval
+read registry -> consider only workflowRole: inspection entries -> sort by stage ->
+  for each entry:
+    check requires[] exist -> run before-hook (if any) ->
+    invoke skill by id -> run after-hook (if any) ->
+    stop if requiresApproval
+  paired entries (role + pairsWith, e.g. audit-breakdown <-> audit-approve)
+    iterate as one loop: break down -> review gate -> approve -> continue
 ```
 
-Adding a skill is a data change (one JSON entry, one skill folder, optionally one hook file), not a code change.
+Entries with `workflowRole: maintenance` (e.g. `audit-sync`) are skipped by this loop entirely — they run only on demand in `maintenance` mode. Adding a skill that fits one of the existing shapes (a linear stage, a loop partner, or a maintenance tool) is a data change (one JSON entry, one skill folder, optionally one hook file and one command); introducing a genuinely new orchestration shape is the rare case that also updates the agent.
 
 ## Approval model
 
-All four skills (`project-analysis`, `project-docs`, `audit-breakdown`, `audit-sync`) already enforce their own "ask, confirm, wait for approval" steps internally. The registry's `requiresApproval` flag is a second, orchestration-level gate: even if a skill technically could keep going, the agent will not chain into the next stage without the developer explicitly saying so. This mirrors `audit-breakdown`'s own one-topic-per-approval rule, generalized to the whole workflow.
+The inspection skills each enforce their own "ask, confirm, wait for approval" steps internally. The registry's `requiresApproval` flag is a second, orchestration-level gate: even if a skill technically could keep going, the agent will not chain into the next stage without the developer explicitly saying so.
+
+Stage 3 makes the approval model explicit by giving finalization its own skill. `audit-breakdown` creates a `Draft` and stops (`requiresApproval: true` — the review gate); `audit-approve` is the **single owner** of the `Draft` -> `Approved` transition and runs only on explicit developer approval (`requiresApproval: false`, because invoking it *is* the approval). After a clean approval the agent immediately breaks down the next topic, so the developer drives the loop one reviewed topic at a time. This keeps each skill single-responsibility: breakdown drafts, approve finalizes, and `audit-sync` (maintenance) only ever reflects already-`Approved` topics into `CLAUDE.md` — it never approves and never writes `AUDIT.md`.
 
 ## Hooks are agent-read instructions, not Claude Code hook events
 
@@ -38,14 +43,14 @@ All four skills (`project-analysis`, `project-docs`, `audit-breakdown`, `audit-s
 
 ## Deterministic verification scripts
 
-Skills produce markdown by LLM judgment, which is good for prose but not ideal for exact-match bookkeeping like slugs and table cell values. `scripts/slugify.ts` and `scripts/update-audit-index.ts` give the `after-audit-breakdown` hook a way to double-check the skill's own edit against a fixed rule, without the agent or a script ever being allowed to rewrite the file itself — discrepancies are reported to the developer, not silently patched.
+Skills produce markdown by LLM judgment, which is good for prose but not ideal for exact-match bookkeeping like slugs and table cell values. `scripts/slugify.ts` and `scripts/update-audit-index.ts` give the `after-audit-breakdown` and `after-audit-approve` hooks a way to double-check the skill's own edit against a fixed rule — verifying the row's status and that the permanent `File` reference matches the deterministic slug on both `Draft` and `Approved` rows — without the agent or a script ever being allowed to rewrite the file itself. Discrepancies are reported to the developer, not silently patched.
 
 ## Extending the plugin
 
 To add a new skill, e.g. `security-inspector`:
 
-1. Place the skill under `skills/security-inspector/`.
-2. Add one entry to `skills/registry.json` with its `stage`, `requires`, `produces`, and `requiresApproval`.
-3. Optionally add `hooks/after-security-inspector.md` if the stage needs a checkpoint.
+1. Place the skill under `skills/security-inspector/` and list it in `plugin.json`'s `skills[]` array.
+2. Add one entry to `skills/registry.json` with its `stage`, `role`/`pairsWith`/`workflowRole`, `requires`, `produces`, and `requiresApproval`.
+3. Optionally add `hooks/after-security-inspector.md` if the stage needs a checkpoint, and a command under `commands/` (also listed in `plugin.json`) if it needs a dedicated entry point.
 
-No changes to `plugin.json`, `agents/project-inspector.md`, `commands/inspect.md`, or any existing hook file are needed.
+If the new skill fits an existing orchestration shape — a linear inspection stage, a breakdown-approve-style loop partner, or an on-demand maintenance tool — no change to `agents/project-inspector.md` or existing hooks is needed; the agent's generic logic already handles it via the registry fields. Only a genuinely new orchestration pattern (as the breakdown-approve loop itself was) requires updating the agent.

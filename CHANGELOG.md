@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.0 — 2026-07-03
+
+Redesigned the audit approval workflow around a dedicated `audit-approve` skill, so each skill has a single responsibility. Previously, "approve & continue" only advanced to the next Draft and never finalized the reviewed topic — Drafts accumulated with none marked `Approved`. Approval is now its own step.
+
+- Added `audit-approve` (stage 3, approval half of the new breakdown → approve loop). It is the single owner of the `Draft` → `Approved` transition: it validates the topic is `Draft`, flips its `AUDIT.md` row to `Approved`, confirms the permanent file reference, and never generates a topic or touches `CLAUDE.md`.
+- Reworked `agents/project-inspector.md`: Stage 3 is now a breakdown → review → approve → continue loop. After a clean `audit-approve`, the agent immediately breaks down the next `Pending Breakdown` topic and stops at its review gate; when all topics are `Approved` it reports Stage 3 complete. Added a fifth invocation mode (`maintenance`) and redefined `resume` to finalize the reviewed Draft.
+- `/inspect-approve` now finalizes the reviewed Draft (runs `audit-approve`) and continues the loop, instead of merely advancing one breakdown cycle.
+- Added `/inspect-sync` and a `maintenance` mode to run `audit-sync` on demand.
+- Repurposed `audit-sync` as a documentation-maintenance tool only (`workflowRole: maintenance`), removed from the linear workflow. It no longer marks anything `Approved` and now treats `AUDIT.md` as read-only — it syncs approved findings into the `CLAUDE.md` managed blocks, verifies consistency, detects drift, and repairs references inside its blocks.
+- Extended `skills/registry.json` with `role`, `pairsWith`, and `workflowRole` fields to express the breakdown/approve pairing and the maintenance role. `audit-breakdown` unchanged in responsibility (create one Draft, stop) — only its completion/approval wording now points at `audit-approve`.
+- Added hook `after-audit-approve`; updated `after-audit-sync` (maintenance, no approval) and `after-audit-breakdown` (points at approve). Extended `scripts/update-audit-index.ts` to verify the file reference on `Approved` rows too.
+- Updated `.claude-plugin/plugin.json` (registered the new skill and command, bumped to 0.4.0), `README.md`, `docs/plugin-workflow.md`, and `docs/architecture.md`.
+- No changes to any target repository's source code.
+
 ## 0.3.0 — 2026-07-02
 
 Completed the four-stage workflow and prepared for distribution.

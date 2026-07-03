@@ -91,7 +91,7 @@ function main(): void {
   if (row.status !== "Draft" && row.status !== "Approved") {
     problems.push(`Unexpected status "${row.status}" (expected "Draft", or "Approved" if the developer already signed off).`);
   }
-  if (row.status === "Draft" && row.file !== expectedFile) {
+  if ((row.status === "Draft" || row.status === "Approved") && row.file !== expectedFile) {
     problems.push(`File column is "${row.file}", expected "${expectedFile}" based on the deterministic slug rule.`);
   }
   if (row.file === "Not created yet" && row.status !== "Pending Breakdown") {

@@ -1,11 +1,13 @@
 {
   "$schemaVersion": 1,
-  "description": "Extensibility seam for the Ono Project Inspector plugin. The orchestrating agent (agents/project-inspector.md) reads this file to decide which skills exist, in what order, and how they connect to hooks. Adding a new skill never requires editing the agent, the command, or existing hooks — only this file plus the new skill folder (and optionally a new hook).",
+  "description": "Extensibility seam for the Ono Project Inspector plugin. The orchestrating agent (agents/project-inspector.md) reads this file to decide which skills exist, in what order, how they connect to hooks, and how they relate to each other (via `role` and `pairsWith`). A skill's `workflowRole` distinguishes skills that are part of the linear inspection sequence (`inspection`, the default) from on-demand maintenance tools (`maintenance`) that the agent must not run as part of the normal workflow. Adding a new skill never requires editing the agent or existing hooks — only this file plus the new skill folder (and optionally a new hook and command).",
   "skills": [
     {
       "id": "project-analysis",
       "enabled": true,
       "stage": 1,
+      "role": "analysis",
+      "workflowRole": "inspection",
       "path": "skills/project-analysis",
       "produces": ["CLAUDE.md", "AUDIT.md"],
       "requires": [],
@@ -15,12 +17,14 @@
         "before": "before-inspect",
         "after": "after-project-analysis"
       },
-      "notes": "First stage. Creates the project's baseline AI context and the audit topic index. Must run before any other stage. Its CLAUDE.md template embeds the audit-sync managed-block markers that stage 4 later populates."
+      "notes": "First stage. Creates the project's baseline AI context and the audit topic index. Must run before any other stage. Its CLAUDE.md template embeds the audit-sync managed-block markers that the maintenance tool later populates."
     },
     {
       "id": "project-docs",
       "enabled": true,
       "stage": 2,
+      "role": "docs",
+      "workflowRole": "inspection",
       "path": "skills/project-docs",
       "produces": [
         "docs/project/overview.md",
@@ -40,6 +44,9 @@
       "id": "audit-breakdown",
       "enabled": true,
       "stage": 3,
+      "role": "breakdown",
+      "pairsWith": "audit-approve",
+      "workflowRole": "inspection",
       "path": "skills/audit-breakdown",
       "produces": ["audits/<topic-slug>/<topic-slug>-audit.md"],
       "requires": ["AUDIT.md"],
@@ -48,12 +55,31 @@
       "hooks": {
         "after": "after-audit-breakdown"
       },
-      "notes": "Processes exactly one Pending Breakdown topic per invocation. The agent loops back to this skill only when the developer explicitly approves continuing to the next topic."
+      "notes": "Stage 3, breakdown half of the breakdown-approve loop. Processes exactly one Pending Breakdown topic per invocation, writes one Draft audit document, sets the row to Draft, and stops for developer review. Never marks Approved and never continues on its own. Its `requiresApproval: true` is the review gate: the agent stops after each Draft until the developer approves. Finalization is the paired audit-approve skill's job."
+    },
+    {
+      "id": "audit-approve",
+      "enabled": true,
+      "stage": 3,
+      "role": "approval",
+      "pairsWith": "audit-breakdown",
+      "workflowRole": "inspection",
+      "path": "skills/audit-approve",
+      "produces": [],
+      "requires": ["AUDIT.md"],
+      "repeatable": true,
+      "requiresApproval": false,
+      "hooks": {
+        "after": "after-audit-approve"
+      },
+      "notes": "Stage 3, approval half of the breakdown-approve loop. Invoked when the developer approves the Draft that audit-breakdown just produced. Validates the topic is in Draft, flips its AUDIT.md row to Approved, confirms the permanent file reference, and records optional approval metadata. Never inspects source, never generates a topic, never touches CLAUDE.md. `requiresApproval: false` because running it IS the developer's approval; after it succeeds the agent immediately invokes audit-breakdown for the next Pending Breakdown topic. The after-audit-approve hook is how the agent learns the topic was finalized and may continue the loop."
     },
     {
       "id": "audit-sync",
       "enabled": true,
       "stage": 4,
+      "role": "maintenance",
+      "workflowRole": "maintenance",
       "path": "skills/audit-sync",
       "produces": [],
       "requires": ["AUDIT.md"],
@@ -62,7 +88,7 @@
       "hooks": {
         "after": "after-audit-sync"
       },
-      "notes": "Final stage. Marks developer-approved topics as Approved in AUDIT.md and regenerates the two audit-sync managed blocks inside CLAUDE.md from ALL currently-Approved topics. Only acts on topics the developer explicitly names as approved — never decides approval itself. Re-runs replace the managed blocks rather than duplicating them, so it is safe to run repeatedly as more topics are approved."
+      "notes": "On-demand documentation-maintenance tool. NOT part of the linear inspection sequence: the agent must never run it as a normal workflow stage (workflowRole: maintenance). Invoked explicitly via /inspect-sync (agent maintenance mode) once topics are Approved. It marks nothing Approved (that responsibility moved to audit-approve) — it only regenerates the audit-sync managed blocks inside CLAUDE.md from ALL currently-Approved topics, verifies AUDIT.md consistency, detects documentation drift, repairs broken references, and reports. Re-runs replace the managed blocks rather than duplicating them, so it is safe to run repeatedly."
     }
   ]
 }

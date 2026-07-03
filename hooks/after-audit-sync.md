@@ -5,15 +5,17 @@ Consumed by: `agents/project-inspector.md`, immediately after each `audit-sync` 
 
 Not a Claude Code `hooks.json` event — a checklist the agent follows itself.
 
+`audit-sync` is a documentation-maintenance tool (`workflowRole: maintenance`), run on demand in `maintenance` mode — not a step of the inspection workflow. It does not approve anything.
+
 ## Checklist
 
-1. Confirm the skill only marked as `Approved` the specific topics the developer explicitly named as approved in this conversation. If any topic was flipped to `Approved` that the developer did not name, flag it as a contract violation — only the developer approves audits.
-2. Confirm the skill modified `CLAUDE.md` only inside the two managed blocks (`audit-sync:caution-areas` and `audit-sync:important-files`) and `AUDIT.md` only in the `Status` column of approved rows. If it reported writing anywhere else, flag it and do not attempt to fix it yourself.
-3. Confirm the managed blocks were regenerated from ALL currently-Approved topics, not just the newly approved ones — this is what keeps re-runs idempotent. If the report suggests entries were appended rather than replaced, flag possible duplication.
-4. If the skill reported that an approved topic's audit file was missing or unreadable, confirm it left that topic as `Draft` and reported the problem rather than guessing findings.
-5. This stage has `requiresApproval: true` and is repeatable — do not auto-run it again. Only re-run when the developer approves additional topics later.
-6. In your stage-transition report, tell the developer how many topics are now `Approved` and how many remain `Draft` or `Pending Breakdown`, so they know whether more sync/breakdown cycles are worthwhile.
+1. Confirm the skill treated `AUDIT.md` as **read-only**. If it reported changing any `AUDIT.md` cell — especially flipping a `Status` to `Approved` — flag it as a contract violation: the `Draft` -> `Approved` transition belongs exclusively to `audit-approve`, and `audit-sync` must never write `AUDIT.md`.
+2. Confirm the skill modified `CLAUDE.md` only inside the two managed blocks (`audit-sync:caution-areas` and `audit-sync:important-files`). If it reported writing anywhere else in `CLAUDE.md`, or in `audits/`, `docs/`, or source, flag it and do not attempt to fix it yourself.
+3. Confirm the managed blocks were regenerated from ALL currently-`Approved` topics, not just recently changed ones — this is what keeps re-runs idempotent and repairs stale links. If the report suggests entries were appended rather than replaced, flag possible duplication.
+4. Confirm the skill synced only topics that were already `Approved` in `AUDIT.md`. It must not have inferred approval or synced `Draft`/`Pending Breakdown` topics.
+5. If the skill reported a consistency/drift issue (a broken `File` reference, a status/slug mismatch, a missing audit file for an `Approved` row), surface it to the developer as an action item — `audit-sync` reports these but does not fix `AUDIT.md`. Do not silently correct anything yourself.
+6. This is maintenance, not workflow advancement — do not treat a completed sync as advancing any inspection stage, and do not auto-run it again. In your report, tell the developer how many Approved topics were synced and list any consistency issues found.
 
 ## Why this exists
 
-`audit-sync` is the only stage that writes back into `CLAUDE.md`, and it does so through fragile marker-delimited blocks driven by developer approval. This hook is the enforcement point that keeps approval developer-owned, keeps edits inside the managed markers, and verifies the idempotent full-regeneration contract independently of the LLM-driven edit.
+`audit-sync` is the only tool that writes back into `CLAUDE.md`, through fragile marker-delimited blocks. This hook is the enforcement point that keeps those edits inside the managed markers, keeps `AUDIT.md` read-only for this skill (approval stays with `audit-approve`), verifies the idempotent full-regeneration contract independently of the LLM-driven edit, and routes any detected drift to the developer as an action item rather than a silent fix.

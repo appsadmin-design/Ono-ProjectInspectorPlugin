@@ -1,8 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin.json",
   "name": "ono-project-inspector",
-  "version": "0.3.0",
-  "description": "Inspects an existing software repository and gradually builds a structured AI knowledge base for it (CLAUDE.md, AUDIT.md, and per-topic audit documents). Never modifies source code. First plugin in the Ono internal AI Marketplace.",
+  "version": "0.4.0",
+  "description": "Inspects an existing software repository and gradually builds a structured AI knowledge base for it (CLAUDE.md, AUDIT.md, and per-topic audit documents). Uses a breakdown → approve loop for audit topics and an on-demand documentation-sync maintenance tool. Never modifies source code. First plugin in the Ono internal AI Marketplace.",
   "author": {
     "name": "Ono Apps",
     "email": "yagil@onoapps.com"
@@ -18,7 +18,8 @@
     "./commands/inspect.md",
     "./commands/inspect-status.md",
     "./commands/inspect-topic.md",
-    "./commands/inspect-approve.md"
+    "./commands/inspect-approve.md",
+    "./commands/inspect-sync.md"
   ],
   "agents": [
     "./agents/project-inspector.md"
@@ -27,6 +28,7 @@
     "./skills/project-analysis",
     "./skills/project-docs",
     "./skills/audit-breakdown",
+    "./skills/audit-approve",
     "./skills/audit-sync"
   ],
   "hardConstraints": {
@@ -36,6 +38,6 @@
   },
   "extensibility": {
     "registry": "skills/registry.json",
-    "note": "New inspector skills are added by (1) placing the skill under skills/<id>/, (2) adding one entry to skills/registry.json, and (3) optionally adding a hooks/after-<id>.md checkpoint file. No changes to plugin.json, agents/project-inspector.md, commands/inspect.md, or existing hooks are required."
+    "note": "New inspector skills are added by (1) placing the skill under skills/<id>/ and listing it in this file's skills[] array, (2) adding one entry to skills/registry.json (with role/pairsWith/workflowRole as appropriate), and (3) optionally adding a hooks/after-<id>.md checkpoint file and a command. The orchestrating agent reads registry.json for stage order and relationships: a skill that fits an existing orchestration pattern (a linear stage, a breakdown-approve loop partner, or a maintenance tool) needs no agent change, but introducing a genuinely new pattern does update agents/project-inspector.md."
   }
 }
