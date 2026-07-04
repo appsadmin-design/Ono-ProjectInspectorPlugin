@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.0 — 2026-07-04
+
+Made `/inspect` state-aware ("smart startup"). It no longer blindly starts from stage 1.
+
+- `/inspect` (`full` mode) now first runs `inspection-state` (`detect`, read-only) and presents a status summary plus a tailored set of choices, then waits for the developer before doing any work:
+  - **No inspection exists** → offer to start a new inspection or leave unchanged.
+  - **In progress** → show completed/current stages, topic counts, and the recommended next action; offer to continue, review & approve the current Draft, generate the next topic, run `/inspect-sync`, or leave unchanged.
+  - **Complete** → report completion and offer maintenance only (`/inspect-sync`).
+- Added a "Smart Startup Decision" section to `agents/project-inspector.md`; reworked the `full` mode and Startup Sequence to detect-then-decide.
+- `before-inspect` no longer `init`s state eagerly — `detect` is read-only, and state is first written only once the developer chooses to start or continue, so "leave everything unchanged" writes nothing.
+- Updated `commands/inspect.md` description to reflect the state-aware behavior.
+- `/inspect-status` remains status-only. No new skills, commands, registry, or `inspection-state` structure changes; the registry-driven workflow is unchanged.
+- No changes to any target repository's source code.
+
 ## 0.6.0 — 2026-07-04
 
 Made the inspection workflow fully registry-driven. `scripts/inspection-state.ts` previously hardcoded the stage list, order, produced artifacts, and completion/resume logic; it now derives all of that from `skills/registry.json`.

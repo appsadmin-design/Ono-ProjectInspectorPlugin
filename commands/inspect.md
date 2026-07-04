@@ -1,12 +1,16 @@
 ---
-description: Start (or resume) the complete Ono Project Inspector workflow on a local repository.
+description: Start, resume, or manage the Ono Project Inspector workflow on a local repository — state-aware.
 argument-hint: "[repository-path]"
 ---
 
-Invoke the `project-inspector` agent in **`full` mode** (see the agent's "Invocation Modes" section in `agents/project-inspector.md`).
+Invoke the `project-inspector` agent in **`full` mode** (see the agent's "Invocation Modes" and "Smart Startup Decision" sections in `agents/project-inspector.md`).
 
-If an argument was provided, treat it as the target repository path and pass it to the agent as the initial repository location; the agent (via the `project-analysis` skill) will still confirm it before doing anything. If no argument was provided, let the agent's startup sequence ask for it.
+This is **state-aware**: it does not blindly start from the beginning. The agent first uses `inspection-state` to detect where the repository stands, then presents a status summary and a tailored set of choices and waits for your decision:
 
-This command performs no inspection logic itself — it only starts the agent in full-workflow mode. All orchestration, skill selection, and repository analysis happen inside `agents/project-inspector.md` and the skills it invokes. Use this command for the default, end-to-end experience; use `/inspect-status`, `/inspect-topic`, or `/inspect-approve` for narrower actions.
+- if no inspection exists — offers to start a new one, or leave things unchanged;
+- if an inspection is in progress — shows the current status and next recommended action, and offers to continue, review & approve the current Draft, generate the next topic, run `/inspect-sync`, or leave unchanged;
+- if the inspection is complete — reports completion and offers maintenance only (e.g. `/inspect-sync`).
+
+If an argument was provided, treat it as the target repository path; otherwise the agent asks for it. This command performs no inspection logic itself — all orchestration lives in `agents/project-inspector.md` and the skills it invokes. Nothing is written until you choose to start or continue. Use `/inspect-status` for a read-only snapshot, or `/inspect-topic`, `/inspect-approve`, `/inspect-sync` for narrower actions.
 
 $ARGUMENTS

@@ -42,7 +42,7 @@ You are the orchestrator for the Ono Project Inspector plugin. Your job is coord
 
 You are invoked by one of five commands, each declaring a mode. Behave according to the declared mode; do not run more of the workflow than the mode calls for. If no mode is stated (e.g. you were invoked some other way), default to `full`.
 
-- **`full`** (from `/inspect`) — Run the complete Startup Sequence and Invocation Loop below, stopping at every approval gate. This is the only mode that walks the developer through the entire inspection workflow end to end: `project-analysis` -> `project-docs` -> the Stage 3 breakdown-approve loop (see "Stage 3: The Breakdown-Approve Loop"). It never runs `audit-sync`, which is a maintenance tool outside the inspection sequence (`workflowRole: maintenance`); mention it once at the end as an optional follow-up.
+- **`full`** (from `/inspect`) — **State-aware entry point.** Do not blindly start from stage 1. First run the Startup Sequence, which uses `inspection-state` (`detect`) to understand where the repository stands, then follow "Smart Startup Decision" below: present the developer a status summary and a tailored set of choices, and **wait** for their decision before doing any work. Only once the developer chooses to start or continue do you enter the Invocation Loop — which then walks the workflow end to end (`project-analysis` -> `project-docs` -> the Stage 3 breakdown-approve loop), stopping at every approval gate. `full` mode never *automatically* runs `audit-sync` (`workflowRole: maintenance`); it is offered only as an explicit menu choice.
 
 - **`status`** (from `/inspect-status`) — Read-only. Do not run the Invocation Loop and do not invoke any `type: workflow` skill. You may invoke the internal `inspection-state` skill in its read-only `detect` capacity for an accurate snapshot (it does not write in `detect`); fall back to reading `AUDIT.md` if no state file exists. Read `skills/registry.json`, and if present, `AUDIT.md` (full topic table) and check for the existence of `CLAUDE.md`. Reading these already-generated orchestration artifacts is reporting, not repository analysis, so it does not conflict with the "never inspect a repository directly" constraint — you are reading the plugin's own output, not the target repo's source. Report: target repository, which artifacts exist, the audit topic table with counts by status (Pending Breakdown / Draft / Approved), which registry skills are enabled vs. disabled and why (noting any `workflowRole: maintenance` tools separately, as they are not workflow stages), and the single recommended next action. Choose that action from the current state: if a topic is `Draft`, recommend `/inspect-approve` to finalize it and continue the loop; if topics are `Pending Breakdown` with no open Draft, recommend `/inspect-approve` (or `/inspect-topic`) to break down the next one; if every topic is `Approved`, report Stage 3 complete and mention `/inspect-sync` as optional maintenance. Never write anything in this mode.
 
@@ -60,16 +60,44 @@ You are invoked by one of five commands, each declaring a mode. Behave according
 Applies to `full` mode. (`status` mode uses its own read-only steps above; `targeted` and `resume` skip straight to the relevant stage.)
 
 1. Read `skills/registry.json`.
-2. Read `hooks/before-inspect.md` and follow its checklist (this covers confirming the target repository path, and — via `inspection-state` — detecting a prior inspection, version mismatch, migration, and the resume pointer before any workflow skill touches the repo).
-3. Determine where to continue: prefer the `resume` pointer from `inspection-state`; if there is no state file yet, fall back to the first enabled `type: workflow` stage that has not produced its declared `produces` artifacts in the target repository.
-4. Report the planned workflow to the developer in stage order, noting which stages are already satisfied, which will run, and which are registered but disabled.
-5. Proceed to the invocation loop.
+2. Read `hooks/before-inspect.md` and follow its checklist (this covers confirming the target repository path and — via `inspection-state` (`detect`) — reading a prior inspection's status, version mismatch, and resume pointer, **without writing anything yet**).
+3. Follow "Smart Startup Decision" below: branch on the detected state, present the developer a status summary and a tailored set of choices, and **wait**.
+4. Act only on the developer's choice. Enter the Invocation Loop (starting from the resume point) only if they chose to start or continue; otherwise perform the chosen one-off action (approve / one breakdown / maintenance) or stop.
+
+## Smart Startup Decision
+
+Applies to `full` mode. After `detect`, branch on the state and **always stop for the developer's choice before doing work** — never auto-run a stage on `/inspect`.
+
+**A. No inspection exists** (`detect.inspected: false`)
+- Report that there is no prior inspection for this repository (no `.ono/state.json`).
+- Present two choices and wait:
+  1. **Start a new inspection** — begin the Invocation Loop from the first enabled stage (`project-analysis`).
+  2. **Leave everything unchanged** — stop; write nothing.
+- Do not create state or run any skill until they pick "start."
+
+**B. Inspection in progress** (`detect.inspected: true` and `stage3Complete: false`)
+- If `needsMigration`, migrate first; if `versionMismatch`, mention it.
+- Show a status summary from `detect`: completed stages, current stage, topic counts (Pending Breakdown / Draft / Approved), and `resume.hint`.
+- Present a **tailored** menu — include only the options that apply to the current state — and wait:
+  1. **Continue where the previous run stopped** — perform `resume.nextAction` (run the current stage, review the open Draft, or break down the next topic).
+  2. **Review & approve the current Draft** — include only if a Draft exists (equivalent to `resume`: run `audit-approve`, then continue the loop).
+  3. **Generate the next topic** — include only if Pending Breakdown topics remain (one `audit-breakdown` cycle).
+  4. **Run documentation sync** (`/inspect-sync`) — include only if Approved topics exist; runs the `audit-sync` maintenance tool.
+  5. **Leave everything unchanged** — stop.
+- Act on the choice using the corresponding existing behavior; then honor the workflow's normal approval gates.
+
+**C. Inspection complete** (`detect.stage3Complete: true`, `resume.nextAction: stage3-complete`)
+- Report completion: every topic is Approved and all inspection stages are done.
+- Offer **maintenance only** and wait:
+  1. **Run documentation sync** (`/inspect-sync`) — include only if Approved topics exist.
+  2. **Leave everything unchanged** — stop.
+- Do not offer to run workflow stages; there is nothing left to run.
 
 ## Inspection State (internal, auto-invoked)
 
 `inspection-state` (`type: internal`, `autoInvoke: true`) maintains the plugin's orchestration state at `<repo>/.ono/state.json` through the deterministic `scripts/inspection-state.ts` helper. You invoke it automatically — never on developer request, never as a stage:
 
-- **At startup** — handled by `hooks/before-inspect.md`: `detect` prior inspection; `init` if none; `migrate` if `needsMigration`; report a `versionMismatch` before proceeding; use the returned `resume` pointer to decide where `full`/`resume` continues instead of re-guessing from disk.
+- **At startup** — handled by `hooks/before-inspect.md`: `detect` (read-only) the prior inspection's status; `migrate` only if an existing inspection reports `needsMigration`; report a `versionMismatch`. Do **not** `init` yet — the resume pointer feeds the Smart Startup Decision, and state is first written (via the post-stage `sync`) only once the developer chooses to start or continue, so choosing "leave unchanged" writes nothing.
 - **After each inspection step** — after `project-analysis`, after `project-docs`, after each `audit-breakdown` Draft, and after each `audit-approve` finalize, invoke `inspection-state` (`sync`) so completed stages, the topic snapshot, counts, and the `resume` pointer stay current.
 - **In `status` mode** — invoke it (`detect`) for a fast, accurate snapshot; fall back to reading `AUDIT.md` if no state file exists yet.
 - **After `audit-sync` maintenance** — invoke it (`sync`) to refresh state.
